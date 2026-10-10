@@ -79,6 +79,12 @@ static BOOL ApolloPFSubredditNameBlocked(NSString *name) {
     if (names.count == 0) return NO;
     NSString *lower = name.lowercaseString;
     for (NSString *frag in names) {
+        // Fork: a leading "=" means an exact subreddit name (added by the
+        // long-press "Filter Out r/<sub>" row in ApolloForkNoVoting.xm).
+        if (frag.length > 1 && [frag hasPrefix:@"="]) {
+            if ([lower isEqualToString:[frag substringFromIndex:1]]) return YES;
+            continue;
+        }
         if (frag.length > 0 && [lower rangeOfString:frag].location != NSNotFound) return YES;
     }
     return NO;
