@@ -1,8 +1,8 @@
 // ApolloForkNoVoting — personal-fork changes (Bryan's build), kept in one file
 // so upstream merges stay conflict-free.
 //
-//   1. Comments header quick bar: upvote, downvote, save and share buttons
-//      removed (reply / edit stay).
+//   1. Comments header quick bar: upvote, downvote, save, share and reply
+//      (new comment) buttons removed (edit stays on your own posts).
 //   2. Feed posts: upvote / downvote buttons removed from compact and large
 //      post cells.
 //   3. ••• menus for posts, the comments header and comments: Upvote,
@@ -13,6 +13,12 @@
 //      menu has exactly one row, "Filter Out r/<sub>", which adds an EXACT
 //      subreddit filter to Reborn's Post Filters (shown in Settings → Filters &
 //      Blocks as "=<sub>"; delete it there to undo).
+//   5. (1.1) Feed posts: the post age ("5h") and edited marker are hidden and
+//      the score can't be tapped; swipe gestures on feed posts are off, so a
+//      post can't be voted on from a list. Inside comments nothing changes.
+//
+// The Search tab / feed search bar removal and filter export/import live in
+// ApolloForkSearchAndFilters.xm.
 //
 // Removal technique for the buttons: after Apollo builds its layout spec, walk
 // the spec tree and drop the unwanted button nodes from every child list, so
@@ -84,8 +90,9 @@ static NSSet *ApolloForkNodesToDrop(id owner, const char *const *ivarNames, size
 %hook _TtC6Apollo20CommentsQuickBarNode
 - (id)layoutSpecThatFits:(struct ApolloForkSizeRange)fits {
     id spec = %orig;
-    static const char *const names[] = { "upvoteButton", "downvoteButton", "saveButton", "shareButton" };
-    ApolloForkPruneSpec(spec, ApolloForkNodesToDrop(self, names, 4), 0);
+    // 1.1: the reply (new comment) arrow goes too.
+    static const char *const names[] = { "upvoteButton", "downvoteButton", "saveButton", "shareButton", "replyButton" };
+    ApolloForkPruneSpec(spec, ApolloForkNodesToDrop(self, names, 5), 0);
     return spec;
 }
 %end
@@ -107,6 +114,62 @@ static NSSet *ApolloForkNodesToDrop(id owner, const char *const *ivarNames, size
     static const char *const names[] = { "upvoteButton", "downvoteButton" };
     ApolloForkPruneSpec(spec, ApolloForkNodesToDrop(self, names, 2), 0);
     return spec;
+}
+%end
+
+#pragma mark - 5. Feed posts: no age, no voting
+
+// PostInfoNode is the "r/sub • 1.2k • 💬 300 • 5h" line on every post cell; the
+// same node draws the post header inside comments (isInsideComments), which is
+// left alone.
+%hook _TtC6Apollo12PostInfoNode
+- (id)layoutSpecThatFits:(struct ApolloForkSizeRange)fits {
+    id spec = %orig;
+    if (ApolloReadBoolIvar(self, "isInsideComments", NO)) return spec;
+    static const char *const names[] = { "ageButtonNode", "editedButtonNode" };
+    ApolloForkPruneSpec(spec, ApolloForkNodesToDrop(self, names, 2), 0);
+    // The score stays visible but can't be tapped / long-pressed to vote.
+    id points = ApolloObjectIvar(self, "pointsButtonNode");
+    if ([points respondsToSelector:@selector(setUserInteractionEnabled:)]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(points, @selector(setUserInteractionEnabled:), NO);
+    }
+    return spec;
+}
+%end
+
+// Large cells route score taps straight to the cell.
+%hook _TtC6Apollo17LargePostCellNode
+- (void)pointsButtonTappedWithSender:(id)sender {}
+- (void)pointsButtonLongPressedWithGestureRecognizer:(id)recognizer {}
+- (void)upvoteButtonTappedWithSender:(id)sender {}
+- (void)downvoteButtonTappedWithSender:(id)sender {}
+%end
+
+// Swipe gestures (Apollo's default left/right swipes upvote / downvote) never
+// begin on a post cell in a list. Comment swipes are unaffected.
+static BOOL ApolloForkViewIsInPostCell(UIView *view) {
+    static Class compact, large;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        compact = objc_getClass("_TtC6Apollo19CompactPostCellNode");
+        large = objc_getClass("_TtC6Apollo17LargePostCellNode");
+    });
+    SEL nodeSel = NSSelectorFromString(@"asyncdisplaykit_node");
+    int guard = 0;
+    for (UIView *v = view; v && guard++ < 12; v = v.superview) {
+        if (![v respondsToSelector:nodeSel]) continue;
+        id node = ((id (*)(id, SEL))objc_msgSend)(v, nodeSel);
+        if ((compact && [node isKindOfClass:compact]) || (large && [node isKindOfClass:large])) return YES;
+    }
+    return NO;
+}
+
+%hook _TtC6Apollo19SlideGestureBuilder
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)recognizer {
+    UIView *sliding = ApolloReadSwiftWeakObjectIvar(self, "slidingView");
+    if (!sliding && [recognizer isKindOfClass:[UIGestureRecognizer class]]) sliding = recognizer.view;
+    if (sliding && ApolloForkViewIsInPostCell(sliding)) return NO;
+    return %orig;
 }
 %end
 

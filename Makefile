@@ -353,6 +353,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloPostFilterStore.m \
     $(SRC_DIR)/ApolloPostFilters.xm \
     $(SRC_DIR)/ApolloForkNoVoting.xm \
+    $(SRC_DIR)/ApolloForkSearchAndFilters.xm \
     $(SRC_DIR)/ApolloFiltersBlocksInject.xm \
     $(SRC_DIR)/ApolloSubredditFilterDetailViewController.m \
     $(SRC_DIR)/PictureInPictureViewController.m \
